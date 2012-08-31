@@ -302,7 +302,7 @@ class BaseFolder(object):
         for uid in uidlist:
             self.deletemessage(uid)
 
-    def copymessageto(self, uid, dstfolder, statusfolder, register = 1):
+    def copymessageto(self, uid, dstfolder, statusfolder, always_sync_deletes, register = 1):
         """Copies a message from self to dst if needed, updating the status
 
         Note that this function does not check against dryrun settings,
@@ -374,7 +374,7 @@ class BaseFolder(object):
                                exc_info()[2]))
             raise    #raise on unknown errors, so we can fix those
 
-    def syncmessagesto_copy(self, dstfolder, statusfolder):
+    def syncmessagesto_copy(self, dstfolder, statusfolder, always_sync_deletes):
         """Pass1: Copy locally existing messages not on the other side
 
         This will copy messages to dstfolder that exist locally but are
@@ -409,16 +409,16 @@ class BaseFolder(object):
                     self.getcopyinstancelimit(),
                     target = self.copymessageto,
                     name = "Copy message from %s:%s" % (self.repository, self),
-                    args = (uid, dstfolder, statusfolder))
+                    args = (uid, dstfolder, statusfolder, always_sync_deletes))
                 thread.start()
                 threads.append(thread)
             else:
-                self.copymessageto(uid, dstfolder, statusfolder,
+                self.copymessageto(uid, dstfolder, statusfolder, always_sync_deletes,
                                    register = 0)
         for thread in threads:
             thread.join()
 
-    def syncmessagesto_delete(self, dstfolder, statusfolder):
+    def syncmessagesto_delete(self, dstfolder, statusfolder, always_sync_deletes):
         """Pass 2: Remove locally deleted messages on dst
 
         Get all UIDS in statusfolder but not self. These are messages
@@ -427,8 +427,19 @@ class BaseFolder(object):
 
         This function checks and protects us from action in ryrun mode.
         """
+        # This is functionally equivalent to having an empty deletelist
+        # in the case of not always_sync_deletes and no-delete-local turned on; the
+        # only difference is that in this regime we eagerly clear out
+        # "stale" entries from statusfolder, i.e. ones that are not
+        # present in the local or destination folder, whereas if we were
+        # to skip this the entries hang around until a not always_sync_deletes
+        # run.
+        sync_deletes = always_sync_deletes or not self.config.getdefaultboolean("Account " + self.accountname, "no-delete-local", False)
+        print sync_deletes
+        import sys
+        sys.exit()
         deletelist = filter(lambda uid: uid>=0 \
-                                and not self.uidexists(uid),
+                                and not self.uidexists(uid) and (sync_deletes or not dstfolder.uidexists(uid)),
                             statusfolder.getmessageuidlist())
         if len(deletelist):
             self.ui.deletingmessages(deletelist, [dstfolder])
@@ -439,7 +450,7 @@ class BaseFolder(object):
             for folder in [statusfolder, dstfolder]:
                 folder.deletemessages(deletelist)
 
-    def syncmessagesto_flags(self, dstfolder, statusfolder):
+    def syncmessagesto_flags(self, dstfolder, statusfolder, always_sync_deletes):
         """Pass 3: Flag synchronization
 
         Compare flag mismatches in self with those in statusfolder. If
@@ -493,7 +504,7 @@ class BaseFolder(object):
             dstfolder.deletemessagesflags(uids, set(flag))
             statusfolder.deletemessagesflags(uids, set(flag))
                 
-    def syncmessagesto(self, dstfolder, statusfolder):
+    def syncmessagesto(self, dstfolder, statusfolder, always_sync_deletes):
         """Syncs messages in this folder to the destination dstfolder.
 
         This is the high level entry for syncing messages in one direction.
@@ -531,7 +542,7 @@ class BaseFolder(object):
             if offlineimap.accounts.Account.abort_NOW_signal.is_set():
                 break
             try:
-                action(dstfolder, statusfolder)
+                action(dstfolder, statusfolder, always_sync_deletes)
             except (KeyboardInterrupt):
                 raise
             except OfflineImapError as e:

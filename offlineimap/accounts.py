@@ -443,7 +443,7 @@ def syncfolder(account, remotefolder, quick):
         # Synchronize remote changes.
         if not localrepos.getconfboolean('readonly', False):
             ui.syncingmessages(remoterepos, remotefolder, localrepos, localfolder)
-            remotefolder.syncmessagesto(localfolder, statusfolder)
+            remotefolder.syncmessagesto(localfolder, statusfolder, False)
         else:
             ui.debug('imap', "Not syncing to read-only repository '%s'" \
                          % localrepos.getname())
@@ -451,7 +451,7 @@ def syncfolder(account, remotefolder, quick):
         # Synchronize local changes
         if not remoterepos.getconfboolean('readonly', False):
             ui.syncingmessages(localrepos, localfolder, remoterepos, remotefolder)
-            localfolder.syncmessagesto(remotefolder, statusfolder)
+            localfolder.syncmessagesto(remotefolder, statusfolder, True)
         else:
             ui.debug('', "Not syncing to read-only repository '%s'" \
                          % remoterepos.getname())
