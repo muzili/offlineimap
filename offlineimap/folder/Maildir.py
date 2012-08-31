@@ -162,6 +162,7 @@ class MaildirFolder(BaseFolder):
             fulldirname = os.path.join(self.getfullname(), dirannex)
             files.extend((dirannex, filename) for
                          filename in os.listdir(fulldirname))
+        blacklist = set()
 
         for dirannex, filename in files:
             # We store just dirannex and filename, ie 'cur/123...'
@@ -186,7 +187,22 @@ class MaildirFolder(BaseFolder):
                 else:
                     uid = long(uidmatch.group(1))
             # 'filename' is 'dirannex/filename', e.g. cur/123,U=1,FMD5=1:2,S
-            retval[uid] = {'flags': flags, 'filename': filepath}
+            if uid in blacklist or uid in retval:
+                # Duplicate ID: not good. Give everyone new IDs, and
+                # taint anyone else who thinks they have this ID.
+                if "Archive" not in self.getfullname():
+                    self.ui.warn('Duplicate UID found in Maildir folder %s; reassigning new UIDs' % uid, minor = 1)
+                if uid in retval:
+                    assert uid not in blacklist
+                    blacklist.add(uid)
+                    retval[nouidcounter] = retval[uid]
+                    nouidcounter -= 1
+                    del retval[uid]
+                # It's *two* messages in the first case.
+                retval[nouidcounter] = {'flags': flags, 'filename': filepath}
+                nouidcounter -= 1
+            else:
+                retval[uid] = {'flags': flags, 'filename': filepath}
         return retval
 
     def quickchanged(self, statusfolder):
@@ -291,6 +307,27 @@ class MaildirFolder(BaseFolder):
 
     def getmessageflags(self, uid):
         return self.messagelist[uid]['flags']
+
+    def _move_file(self, oldfilename, uid, flags):
+        timeval, timeseq = gettimeseq()
+        messagename = '%d_%d.%d.%s,U=%d,FMD5=%s' % \
+            (timeval,
+             timeseq,
+             os.getpid(),
+             socket.gethostname(),
+             uid,
+             md5(self.getvisiblename()).hexdigest())
+        newfilename = os.path.join('tmp', messagename)
+        try:
+            os.rename(os.path.join(self.getfullname(), oldfilename),
+                      os.path.join(self.getfullname(), newfilename))
+        except OSError, e:
+            raise OfflineImapError("Can't rename file '%s' to '%s': %s" % (
+                                   oldfilename, newfilename, e[1]),
+                                   OfflineImapError.ERROR.FOLDER)
+        self.messagelist = {}
+        self.messagelist[uid] = {'flags': set(), 'filename': newfilename}
+        self.savemessageflags(uid, flags)
 
     def savemessageflags(self, uid, flags):
         """Sets the specified message's flags to the given set.

@@ -307,6 +307,9 @@ class SyncableAccount(Account):
             if not localrepos.getconfboolean('readonly', False):
                 self.ui.syncfolders(remoterepos, localrepos)
 
+            # try to short circuit moves
+            localrepos.syncmoves(remoterepos, statusrepos)
+
             # iterate through all folders on the remote repo and sync
             for remotefolder in remoterepos.getfolders():
                 # check for CTRL-C or SIGTERM
@@ -433,6 +436,16 @@ def syncfolder(account, remotefolder, quick):
             # Both folders empty, just save new UIDVALIDITY
             localfolder.save_uidvalidity()
             remotefolder.save_uidvalidity()
+
+        # Add localfolder to status repository, so we don't bother
+        # uploading to the remote repository.  This is often useful
+        # if you nuked your status repository by setting maxage.
+        # DO NOT RUN THIS IF YOU DID NOT DISABLE REMOTE->LOCAL DELETIONS!!!
+        # XXX Make this a toggle that you can trigger from the command
+        # line flags (but threading it through is a little nontrivial.
+        if False:
+            for uid in localfolder.getmessageuidlist():
+                statusfolder.savemessagefast(uid, None, localfolder.getmessageflags(uid), localfolder.getmessagetime(uid))
 
         # Load remote folder.
         ui.loadmessagelist(remoterepos, remotefolder)

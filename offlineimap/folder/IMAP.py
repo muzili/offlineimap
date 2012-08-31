@@ -640,6 +640,72 @@ class IMAPFolder(BaseFolder):
             flags = imaputil.flags2hash(imaputil.imapsplit(result)[1])['FLAGS']
             self.messagelist[uid]['flags'] = imaputil.flagsimap2maildir(flags)
 
+    def remotecopymessage(self, uid, remote_newfolder):
+        assert isinstance(remote_newfolder, IMAPFolder)
+        assert self.imapserver == remote_newfolder.imapserver # relies on object identity
+        # XXX optimization: batch operation
+        imapobj = self.imapserver.acquireconnection()
+        # imapobj doesn't clear untagged responses automatically, so we
+        # have to clear responses we use to avoid bogus data (by setting
+        # leave=False)
+        imapobj._get_untagged_response('COPYUID', leave=False)
+        newuid = None
+        try:
+            try:
+                imapobj.select(self.getfullname())
+                use_uidplus = 'UIDPLUS' in imapobj.capabilities
+                (typ, dat) = imapobj.uid("COPY", "%d" % uid, remote_newfolder.getfullname())
+                if typ == 'NO':
+                    return 0
+                # XXX handle abort retry
+            except imapobj.error, e:
+                self.ui.warn('When copying message with UID %s, got error %s' % (uid, str(e)))
+                return 0
+            response = imapobj._get_untagged_response('COPYUID', leave=False)
+            if use_uidplus or response: # GMail doesn't advertise COPYUID but supports it
+                if not response:
+                    self.ui.warn("Server supports UIDPLUS but got no COPYUID "
+                                 "copying a message; maybe message %d no longer exists in %s." % (uid, self.getfullname()))
+                    return 0
+                # Can return multiple things (but it shouldn't); check
+                # it explicitly
+                mresp = filter(lambda x: long(x[1]) == uid, map(lambda x: x.split(' '), response))
+                if len(mresp) == 0:
+                    self.ui.warn("COPYUID response for COPY %d %s was nonsense: %s" % (uid, self.getfullname(), str(response)))
+                    return 0
+
+                newuid = long(mresp[0][2])
+
+                # Only checkpoint on success
+                (typ, dat) = imapobj.check()
+                assert typ == 'OK'
+            else:
+                assert False # XXX do something better here (the X-OfflineIMAP header still exists)
+
+        finally:
+            self.imapserver.releaseconnection(imapobj)
+        if newuid is None:
+            return 0
+
+        # In case of move synchronization, we explicitly avoid setting
+        # up our messagelists, because querying archival folders can be
+        # expensive in general.  Unfortunately, some later commands do
+        # expect messagelist to be setup, so we lazily populate it with
+        # exactly what we need. This does mean the messagelist may be
+        # None, so we have to give it an empty dictionary.
+        if self.messagelist is None:
+            self.messagelist = {}
+        if remote_newfolder.messagelist is None:
+            remote_newfolder.messagelist = {}
+        # Flags are nonsense: either irrelevant (trashed) or overwritten (by a later savemessageflags
+        # during flag sync)
+        if uid:
+            self.messagelist[uid] = {'uid': uid, 'flags': set()}
+        if newuid:
+            remote_newfolder.messagelist[newuid] = {'uid': newuid, 'flags': set()}
+
+        return newuid
+
     def addmessageflags(self, uid, flags):
         self.addmessagesflags([uid], flags)
 
@@ -741,4 +807,13 @@ class IMAPFolder(BaseFolder):
         for uid in uidlist:
             del self.messagelist[uid]
 
-
+    def doexpunge(self):
+        """Manually trigger an expunge, in case we are skipping expunges
+        for performance reasons."""
+        imapobj = self.imapserver.acquireconnection()
+        try:
+            imapobj.select(self.getfullname())
+            r = imapobj.expunge()[0]
+            assert r == 'OK'
+        finally:
+            self.imapserver.releaseconnection(imapobj)

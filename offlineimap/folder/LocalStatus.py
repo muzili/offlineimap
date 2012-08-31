@@ -21,7 +21,14 @@ import threading
 
 magicline = "OFFLINEIMAP LocalStatus CACHE DATA - DO NOT MODIFY - FORMAT 1"
 
-
+# This implementation is pretty bone-headed:
+#   1. It loads up the entire repository into memory, and has to write
+#      the entire thing back again, even if only one line changed.
+#   2. If maxage is set, all of the entries past maxage get nuked.
+#      If you remove the maxage entry, all of localstatus needs to
+#      be reinitialized (which means we need to cross-check localstatus
+#      and remotestatus).  God help you if the sources desynced while
+#      maxage was on; then you might end up uploading A LOT of mail.
 class LocalStatusFolder(BaseFolder):
     def __init__(self, name, repository):
         self.sep = '.' #needs to be set before super.__init__()
@@ -105,6 +112,15 @@ class LocalStatusFolder(BaseFolder):
 
     def getmessagelist(self):
         return self.messagelist
+
+    def savemessagefast(self, uid, content, flags, rtime):
+        if uid < 0:
+            return uid
+        if uid in self.messagelist:
+            self.messagelist[uid]['flags'] = flags
+            return uid
+        self.messagelist[uid] = {'uid': uid, 'flags': flags, 'time': rtime}
+        return uid
 
     def savemessage(self, uid, content, flags, rtime):
         """Writes a new message, with the specified uid.

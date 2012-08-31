@@ -151,6 +151,17 @@ class BaseRepository(CustomConfig.ConfigHelperMixin, object):
     def getfolder(self, foldername):
         raise NotImplementedError
 
+    def syncmoves(self, remoterepos, statusrepos):
+        """Optimization pass for synchronizing moved messages.
+
+        In some cases, it may be possible to more efficiently synchronize
+        messages that moved (contents and uid stayed the same, but
+        the message is in a different folder) than deleting and reuploading.
+        Any local repository may optionally provide an implementation for
+        detecting and carrying out moves.  Classes are not required to implement
+        this."""
+        pass
+
     def sync_folder_structure(self, dst_repo, status_repo):
         """Syncs the folders in this repository to those in dest.
 

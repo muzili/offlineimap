@@ -199,6 +199,17 @@ class BaseFolder(object):
         """Returns the content of the specified message."""
         raise NotImplementedException
 
+    def savemessagefast(self, uid, content, flags, rtime):
+        """Writes a new message with the specified uid, but
+        if possible to do so safely, does not wait to make sure that the
+        message write was successful.
+
+        This operation is only safe for status folder, where
+        loss of an entry in status just means we resync (this can
+        make repeated writes to status that couldn't be batched
+        a lot faster, though try to batch it first!)
+        """
+        return self.savemessage(uid, content, flags, rtime)
     def savemessage(self, uid, content, flags, rtime):
         """Writes a new message, with the specified uid.
 
@@ -302,6 +313,9 @@ class BaseFolder(object):
         for uid in uidlist:
             self.deletemessage(uid)
 
+    def remotecopymessage(self, uid, remote_newfolder, local_newfolder, status_newfolder):
+        raise NotImplementedException
+
     def copymessageto(self, uid, dstfolder, statusfolder, always_sync_deletes, register = 1):
         """Copies a message from self to dst if needed, updating the status
 
@@ -327,9 +341,20 @@ class BaseFolder(object):
             flags = self.getmessageflags(uid)
             rtime = self.getmessagetime(uid)
 
+            if always_sync_deletes and 'T' in flags:
+                # Performance optimization: don't bother uploading
+                # deleted files if delete synchronization is turned on;
+                # they'll just be deleted immediately.  This doesn't
+                # sync flags, which will be handled in the later step.
+                # We also optimize handling large runs of deleted files
+                # by not saving statusfolder until we find another
+                # message which needs to take the slow path.
+                statusfolder.savemessagefast(uid, None, flags, rtime)
+                return
+
             if uid > 0 and dstfolder.uidexists(uid):
                 # dst has message with that UID already, only update status
-                statusfolder.savemessage(uid, None, flags, rtime)
+                statusfolder.savemessagefast(uid, None, flags, rtime)
                 return
 
             # If any of the destinations actually stores the message body,
@@ -390,7 +415,9 @@ class BaseFolder(object):
         threads = []
 
         copylist = filter(lambda uid: not \
-                              statusfolder.uidexists(uid),
+                              statusfolder.uidexists(uid) and \
+                              ("Archive" not in self.getfullname() or uid > 0) and \
+                              'T' not in self.getmessageflags(uid),
                             self.getmessageuidlist())
         num_to_copy = len(copylist)
         if num_to_copy and self.repository.account.dryrun:

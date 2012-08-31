@@ -159,6 +159,14 @@ class OfflineImap:
               "not usable. Possible interface choices are: %s " %
               ", ".join(UI_LIST.keys()))
 
+        parser.add_option("-x", action="store_true", dest="refresh_localstatus", default=False,
+                  help="Instructs OfflineIMAP to refresh its local status "
+              "information based on local information.  Only use this if "
+              "you are running in curated mode and can guarantee that "
+              "prior to using this flag no changes to your local Maildir "
+              "were made (these changes WILL get clobbered if not). "
+              "This is useful for bumping your maxage higher.")
+
         (options, args) = parser.parse_args()
 
         #read in configuration file
