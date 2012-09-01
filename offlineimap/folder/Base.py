@@ -462,9 +462,6 @@ class BaseFolder(object):
         # to skip this the entries hang around until a not always_sync_deletes
         # run.
         sync_deletes = always_sync_deletes or not self.config.getdefaultboolean("Account " + self.accountname, "no-delete-local", False)
-        print sync_deletes
-        import sys
-        sys.exit()
         deletelist = filter(lambda uid: uid>=0 \
                                 and not self.uidexists(uid) and (sync_deletes or not dstfolder.uidexists(uid)),
                             statusfolder.getmessageuidlist())
