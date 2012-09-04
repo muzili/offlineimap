@@ -319,8 +319,7 @@ class MaildirFolder(BaseFolder):
              md5(self.getvisiblename()).hexdigest())
         newfilename = os.path.join('tmp', messagename)
         try:
-            os.rename(os.path.join(self.getfullname(), oldfilename),
-                      os.path.join(self.getfullname(), newfilename))
+            os.link(os.path.join(self.getfullname(), oldfilename), os.path.join(self.getfullname(), newfilename))
         except OSError, e:
             raise OfflineImapError("Can't rename file '%s' to '%s': %s" % (
                                    oldfilename, newfilename, e[1]),
@@ -328,6 +327,7 @@ class MaildirFolder(BaseFolder):
         self.messagelist = {}
         self.messagelist[uid] = {'flags': set(), 'filename': newfilename}
         self.savemessageflags(uid, flags)
+        os.unlink(os.path.join(self.getfullname(), oldfilename))
 
     def savemessageflags(self, uid, flags):
         """Sets the specified message's flags to the given set.
