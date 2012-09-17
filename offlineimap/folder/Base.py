@@ -354,7 +354,7 @@ class BaseFolder(object):
 
             if uid > 0 and dstfolder.uidexists(uid):
                 # dst has message with that UID already, only update status
-                statusfolder.savemessagefast(uid, None, flags, rtime)
+                statusfolder.savemessage(uid, None, flags, rtime)
                 return
 
             # If any of the destinations actually stores the message body,
